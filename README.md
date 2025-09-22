@@ -216,6 +216,7 @@ The application features a modern, professional interface with:
 - Drag-and-drop file support
 - Progress tracking
 - Bulk operations on multiple images
+- Download images as zip file
 
 ## 🤝 Contributing
 
@@ -236,21 +237,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [FastAPI](https://fastapi.tiangolo.com/) - Modern Python web framework
 - [Electron](https://www.electronjs.org/) - Cross-platform desktop apps
 
-## 📞 Support
 
-For support, please open an issue on GitHub or contact [your-email@example.com](mailto:your-email@example.com).
-
-## 🚀 Future Enhancements
-
-- [ ] Machine learning-based image enhancement
-- [ ] Real-time webcam processing
-- [ ] Cloud processing capabilities
-- [ ] Plugin system for custom operations
-- [ ] Advanced batch processing with queues
-- [ ] Image comparison tools
-- [ ] Histogram analysis and equalization
-- [ ] Advanced morphological operations
-
----
-
-**Built with ❤️ using Vue.js, FastAPI, and OpenCV**
