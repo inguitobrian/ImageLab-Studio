@@ -2,11 +2,12 @@
   "name": "imagelab-studio",
   "version": "0.0.0",
   "private": true,
-  "type": "module",
+  "main": "electron/main.js",
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
   },
   "scripts": {
+    "start": "npm run electron-dev",
     "dev": "vite",
     "build": "vite build",
     "serve": "vite preview",
