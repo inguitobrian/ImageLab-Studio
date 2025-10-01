@@ -285,71 +285,320 @@ async def manipulate_color(
 
 #DRAWING AND SHAPES
 
+# ...existing code...
 
 @app.post("/api/draw-shapes")
-async def draw_shapes(image_data: str = Form(...)):
-    """Draw various shapes on image"""
+async def draw_shapes(
+    image_data: str = Form(...),
+    shapes: str = Form(default="[]")
+):
+    """Draw user-defined shapes on image"""
     try:
+        import json
         image = decode_base64_image(image_data)
         height, width = image.shape[:2]
         
         # Create a copy to draw on
         result_image = image.copy()
         
-        # Draw rectangle
-        cv2.rectangle(result_image, (50, 50), (200, 150), (255, 0, 0), 3)
+        # Parse shapes from JSON
+        try:
+            shapes_list = json.loads(shapes) if shapes else []
+            logger.info(f"Processing {len(shapes_list)} shapes")
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error: {e}")
+            shapes_list = []
         
-        # Draw circle
-        cv2.circle(result_image, (width//2, height//2), 100, (0, 255, 0), 3)
+        drawn_shapes = []
         
-        # Draw line
-        cv2.line(result_image, (0, 0), (width, height), (0, 0, 255), 2)
+        for i, shape in enumerate(shapes_list):
+            logger.info(f"Processing shape {i}: {shape}")
+            
+            shape_type = shape.get("type", "").lower()
+            color = shape.get("color", [255, 255, 255])
+            thickness = shape.get("thickness", 2)
+            filled = shape.get("filled", False)
+            
+            # Validate color format
+            if not isinstance(color, list) or len(color) < 3:
+                logger.warning(f"Invalid color format: {color}, using default")
+                color = [255, 255, 255]
+            
+            # Validate thickness
+            try:
+                thickness = int(thickness)
+                if thickness < 1:
+                    thickness = 1
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid thickness: {thickness}, using default")
+                thickness = 2
+            
+            # Convert RGB to BGR for OpenCV
+            bgr_color = (int(color[2]), int(color[1]), int(color[0]))
+            line_thickness = -1 if filled else thickness
+            
+            try:
+                if shape_type == "rectangle":
+                    # Get and validate coordinates
+                    x1 = int(shape.get("x1", 0))
+                    y1 = int(shape.get("y1", 0))  
+                    x2 = int(shape.get("x2", 100))
+                    y2 = int(shape.get("y2", 100))
+                    
+                    # Ensure coordinates are within image bounds
+                    x1 = max(0, min(x1, width - 1))
+                    y1 = max(0, min(y1, height - 1))
+                    x2 = max(0, min(x2, width - 1))
+                    y2 = max(0, min(y2, height - 1))
+                    
+                    # Ensure we have a valid rectangle (not just a line)
+                    if abs(x2 - x1) > 0 and abs(y2 - y1) > 0:
+                        cv2.rectangle(result_image, (x1, y1), (x2, y2), bgr_color, line_thickness)
+                        drawn_shapes.append(f"Rectangle: ({x1},{y1}) to ({x2},{y2})")
+                    else:
+                        logger.warning(f"Invalid rectangle dimensions: ({x1},{y1}) to ({x2},{y2})")
+                        
+                elif shape_type == "circle":
+                    center_x = int(shape.get("center_x", 50))
+                    center_y = int(shape.get("center_y", 50))
+                    radius = int(shape.get("radius", 25))
+                    
+                    # Validate parameters
+                    center_x = max(0, min(center_x, width - 1))
+                    center_y = max(0, min(center_y, height - 1))
+                    radius = max(1, min(radius, min(width, height) // 2))
+                    
+                    cv2.circle(result_image, (center_x, center_y), radius, bgr_color, line_thickness)
+                    drawn_shapes.append(f"Circle: center({center_x},{center_y}), radius={radius}")
+                    
+                elif shape_type == "ellipse":
+                    center_x = int(shape.get("center_x", 50))
+                    center_y = int(shape.get("center_y", 50))
+                    width_axis = int(shape.get("width", 50))
+                    height_axis = int(shape.get("height", 30))
+                    angle = float(shape.get("angle", 0))
+                    start_angle = float(shape.get("start_angle", 0))
+                    end_angle = float(shape.get("end_angle", 360))
+                    
+                    # Validate parameters
+                    center_x = max(0, min(center_x, width - 1))
+                    center_y = max(0, min(center_y, height - 1))
+                    width_axis = max(1, width_axis)
+                    height_axis = max(1, height_axis)
+                    
+                    cv2.ellipse(result_image, (center_x, center_y), (width_axis, height_axis), 
+                               angle, start_angle, end_angle, bgr_color, line_thickness)
+                    drawn_shapes.append(f"Ellipse: center({center_x},{center_y}), axes({width_axis},{height_axis})")
+                    
+                elif shape_type == "line":
+                    x1 = int(shape.get("x1", 0))
+                    y1 = int(shape.get("y1", 0))
+                    x2 = int(shape.get("x2", 100))
+                    y2 = int(shape.get("y2", 100))
+                    
+                    # Validate coordinates
+                    x1 = max(0, min(x1, width - 1))
+                    y1 = max(0, min(y1, height - 1))
+                    x2 = max(0, min(x2, width - 1))
+                    y2 = max(0, min(y2, height - 1))
+                    
+                    cv2.line(result_image, (x1, y1), (x2, y2), bgr_color, thickness)
+                    drawn_shapes.append(f"Line: ({x1},{y1}) to ({x2},{y2})")
+                    
+                elif shape_type == "polygon":
+                    polygon_type = shape.get("polygon_type", "pentagon")
+                    center_x = int(shape.get("center_x", 150))
+                    center_y = int(shape.get("center_y", 150))
+                    size = int(shape.get("size", 80))
+                    
+                    # Validate center coordinates
+                    center_x = max(size, min(center_x, width - size))
+                    center_y = max(size, min(center_y, height - size))
+                    
+                    try:
+                        # Generate predefined polygon points based on type
+                        if polygon_type == "triangle":
+                            # Equilateral triangle
+                            points = [
+                                [center_x, center_y - size],              # Top
+                                [center_x - int(size * 0.866), center_y + size//2],  # Bottom left
+                                [center_x + int(size * 0.866), center_y + size//2]   # Bottom right
+                            ]
+                        else:
+                            # Default to pentagon
+                            points = []
+                            for i in range(5):
+                                angle = i * 2 * 3.14159 / 5 - 3.14159/2
+                                x = int(center_x + size * np.cos(angle))
+                                y = int(center_y + size * np.sin(angle))
+                                points.append([x, y])
+                        
+                        # Ensure all points are within image bounds
+                        valid_points = []
+                        for point in points:
+                            x = max(0, min(point[0], width - 1))
+                            y = max(0, min(point[1], height - 1))
+                            valid_points.append([x, y])
+                        
+                        # Let's define the points using numpy array
+                        pts_original = np.array(valid_points, np.int32)
+                        
+                        if filled:
+                            cv2.fillPoly(result_image, [pts_original], bgr_color)
+                            drawn_shapes.append(f"Filled {polygon_type.title()}: center({center_x},{center_y})")
+                        else:
+                            # Let's now reshape our points in form required by polylines
+                            pts_reshaped = pts_original.reshape((-1, 1, 2))
+                            cv2.polylines(result_image, [pts_reshaped], True, bgr_color, thickness)
+                            drawn_shapes.append(f"{polygon_type.title()} Outline: center({center_x},{center_y})")
+                            
+                    except (ValueError, TypeError) as poly_error:
+                        logger.error(f"Polygon processing error: {poly_error}")
+                        continue
+                        
+                elif shape_type == "arrow":
+                    x1 = int(shape.get("x1", 0))
+                    y1 = int(shape.get("y1", 0))
+                    x2 = int(shape.get("x2", 100))
+                    y2 = int(shape.get("y2", 100))
+                    tip_length = float(shape.get("tip_length", 0.1))
+                    
+                    # Validate coordinates
+                    x1 = max(0, min(x1, width - 1))
+                    y1 = max(0, min(y1, height - 1))
+                    x2 = max(0, min(x2, width - 1))
+                    y2 = max(0, min(y2, height - 1))
+                    
+                    # Validate tip_length
+                    tip_length = max(0.05, min(tip_length, 0.5))
+                    
+                    cv2.arrowedLine(result_image, (x1, y1), (x2, y2), bgr_color, thickness, tipLength=tip_length)
+                    drawn_shapes.append(f"Arrow: ({x1},{y1}) to ({x2},{y2})")
+                    
+                else:
+                    logger.warning(f"Unknown shape type: {shape_type}")
+                    continue
+                    
+            except Exception as shape_error:
+                logger.error(f"Error drawing {shape_type}: {shape_error}")
+                logger.error(f"Shape data: {shape}")
+                continue
         
-        # Draw ellipse
-        cv2.ellipse(result_image, (width//2, height//4), (100, 50), 0, 0, 360, (255, 255, 0), 2)
-        
-        # Draw polygon
-        pts = np.array([[width-200, height-200], [width-100, height-200], 
-                       [width-50, height-100], [width-150, height-100]], np.int32)
-        cv2.polylines(result_image, [pts], True, (255, 0, 255), 2)
+        logger.info(f"Successfully drew {len(drawn_shapes)} shapes")
         
         return {
             "processed_image": encode_image_to_base64(result_image),
-            "operation": "draw_shapes"
+            "shapes_drawn": drawn_shapes,
+            "total_shapes": len(drawn_shapes),
+            "operation": "draw_custom_shapes"
         }
+        
     except Exception as e:
-        logger.error(f"Error drawing shapes: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error in draw_shapes: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Drawing error: {str(e)}")
 
-@app.post("/api/add-text")
-async def add_text(
+@app.post("/api/draw-freehand")
+async def draw_freehand(
     image_data: str = Form(...),
-    text: str = Form("OpenCV Text"),
-    font_scale: float = Form(1.0),
-    color_r: int = Form(255),
-    color_g: int = Form(255),
-    color_b: int = Form(255)
+    points: str = Form(...),  # JSON array of {x, y} coordinates
+    color: str = Form(default="[255, 255, 255]"),  # RGB color as JSON
+    thickness: int = Form(default=2),
+    closed: bool = Form(default=False)
 ):
-    """Add text to image"""
+    """Draw freehand lines/curves from array of points"""
     try:
+        import json
         image = decode_base64_image(image_data)
         result_image = image.copy()
         
-        # Add text
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        position = (50, 50)
-        color = (color_b, color_g, color_r)  # BGR format
-        thickness = 2
+        # Parse points and color
+        points_list = json.loads(points)
+        color_rgb = json.loads(color)
+        bgr_color = (int(color_rgb[2]), int(color_rgb[1]), int(color_rgb[0]))
         
-        cv2.putText(result_image, text, position, font, font_scale, color, thickness)
+        if len(points_list) < 2:
+            raise HTTPException(status_code=400, detail="Need at least 2 points to draw")
+        
+        # Convert points to numpy array
+        pts = np.array([[int(p["x"]), int(p["y"])] for p in points_list], np.int32)
+        
+        if closed:
+            # Draw closed polygon
+            cv2.polylines(result_image, [pts], True, bgr_color, thickness)
+        else:
+            # Draw connected lines
+            for i in range(len(pts) - 1):
+                cv2.line(result_image, tuple(pts[i]), tuple(pts[i + 1]), bgr_color, thickness)
         
         return {
             "processed_image": encode_image_to_base64(result_image),
-            "text": text,
-            "operation": "add_text"
+            "points_count": len(points_list),
+            "closed": closed,
+            "operation": "draw_freehand"
         }
     except Exception as e:
-        logger.error(f"Error adding text: {str(e)}")
+        logger.error(f"Error drawing freehand: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/draw-text-custom")
+async def draw_text_custom(
+    image_data: str = Form(...),
+    text_elements: str = Form(default="[]")  # JSON array of text objects
+):
+    """Draw multiple custom text elements"""
+    try:
+        import json
+        image = decode_base64_image(image_data)
+        result_image = image.copy()
+        
+        # Parse text elements
+        texts = json.loads(text_elements) if text_elements else []
+        drawn_texts = []
+        
+        for text_elem in texts:
+            try:
+                text = text_elem.get("text", "Sample Text")
+                x, y = int(text_elem.get("x", 50)), int(text_elem.get("y", 50))
+                font_scale = float(text_elem.get("font_scale", 1.0))
+                color = text_elem.get("color", [255, 255, 255])
+                thickness = int(text_elem.get("thickness", 2))
+                font_name = text_elem.get("font", "HERSHEY_SIMPLEX")
+                
+                # Map font names to OpenCV constants
+                font_map = {
+                    "HERSHEY_SIMPLEX": cv2.FONT_HERSHEY_SIMPLEX,
+                    "HERSHEY_PLAIN": cv2.FONT_HERSHEY_PLAIN,
+                    "HERSHEY_DUPLEX": cv2.FONT_HERSHEY_DUPLEX,
+                    "HERSHEY_COMPLEX": cv2.FONT_HERSHEY_COMPLEX,
+                    "HERSHEY_TRIPLEX": cv2.FONT_HERSHEY_TRIPLEX,
+                    "HERSHEY_COMPLEX_SMALL": cv2.FONT_HERSHEY_COMPLEX_SMALL,
+                    "HERSHEY_SCRIPT_SIMPLEX": cv2.FONT_HERSHEY_SCRIPT_SIMPLEX,
+                    "HERSHEY_SCRIPT_COMPLEX": cv2.FONT_HERSHEY_SCRIPT_COMPLEX
+                }
+                
+                font = font_map.get(font_name, cv2.FONT_HERSHEY_SIMPLEX)
+                bgr_color = (int(color[2]), int(color[1]), int(color[0])) if len(color) >= 3 else (255, 255, 255)
+                
+                h, w = result_image.shape[:2]
+                (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, thickness)
+                x = (w - text_width) // 2
+                y = (h + text_height) // 2
+                
+                cv2.putText(result_image, text, (x, y), font, font_scale, bgr_color, thickness)
+                drawn_texts.append(f"Text: '{text}' at ({x},{y})")
+                
+            except (KeyError, ValueError, TypeError) as e:
+                logger.warning(f"Skipping invalid text element: {str(e)}")
+                continue
+        
+        return {
+            "processed_image": encode_image_to_base64(result_image),
+            "texts_drawn": drawn_texts,
+            "total_texts": len(drawn_texts),
+            "operation": "draw_custom_text"
+        }
+    except Exception as e:
+        logger.error(f"Error drawing custom text: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

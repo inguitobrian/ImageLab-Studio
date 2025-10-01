@@ -87,6 +87,31 @@
             RGB Channels
             <span class="btn-arrow">→</span>
           </button>
+
+          <div
+            v-if="currentOperation === 'rgb-channels'"
+            class="rgb-channel-selection"
+          >
+            <div class="channel-selection-title">Select Channel:</div>
+            <div class="channel-buttons">
+              <button class="channel-btn red-btn" @click="extractRedChannel">
+                <span class="channel-icon">🔴</span>
+                <span class="channel-name">Red Channel</span>
+              </button>
+              <button
+                class="channel-btn green-btn"
+                @click="extractGreenChannel"
+              >
+                <span class="channel-icon">🟢</span>
+                <span class="channel-name">Green Channel</span>
+              </button>
+              <button class="channel-btn blue-btn" @click="extractBlueChannel">
+                <span class="channel-icon">🔵</span>
+                <span class="channel-name">Blue Channel</span>
+              </button>
+            </div>
+          </div>
+
           <button
             class="operation-btn"
             :class="{ active: currentOperation === 'hsv-convert' }"
@@ -118,8 +143,96 @@
             :class="{ active: currentOperation === 'draw-shapes' }"
             @click="selectOperation('draw-shapes', $event)"
           >
-            <span class="btn-icon">📷</span>
-            Draw Shapes
+            <span class="btn-icon">🔷</span>
+            Interactive Drawing
+            <span class="btn-arrow">→</span>
+          </button>
+
+          <!-- Shape Selection Buttons (show when Interactive Drawing is active) -->
+          <div
+            v-if="currentOperation === 'draw-shapes'"
+            class="shape-selection"
+          >
+            <div class="shape-selection-title">Choose Shape:</div>
+            <div class="shape-buttons">
+              <button
+                v-for="tool in availableTools"
+                :key="tool.type"
+                class="shape-btn"
+                :class="{ active: currentDrawingTool === tool.type }"
+                @click="selectDrawingTool(tool.type)"
+              >
+                <span class="shape-icon">{{ tool.icon }}</span>
+                <span class="shape-name">{{ tool.name }}</span>
+              </button>
+            </div>
+
+            <!-- Quick Drawing Controls -->
+            <div class="quick-controls">
+              <div class="control-row">
+                <label>Color:</label>
+                <input
+                  type="color"
+                  :value="rgbToHex(drawingColor)"
+                  @input="updateColor($event.target.value)"
+                  class="mini-color-picker"
+                />
+              </div>
+              <div class="control-row">
+                <label>Thickness:</label>
+                <input
+                  type="range"
+                  min="1"
+                  max="10"
+                  v-model="drawingThickness"
+                  class="mini-slider"
+                />
+                <span class="value-display">{{ drawingThickness }}</span>
+              </div>
+              <div
+                class="control-row"
+                v-if="
+                  ['rectangle', 'circle', 'polygon'].includes(
+                    currentDrawingTool
+                  )
+                "
+              >
+                <label>
+                  <input
+                    type="checkbox"
+                    v-model="drawingFilled"
+                    class="mini-checkbox"
+                  />
+                  Fill Shape
+                </label>
+              </div>
+            </div>
+
+            <!-- Drawing Action Buttons -->
+            <div class="drawing-actions">
+              <button class="action-btn clear-btn" @click="clearDrawing">
+                🗑️ Clear
+              </button>
+              <button
+                class="action-btn apply-btn"
+                @click="applyAllShapes"
+                :disabled="currentShapes.length === 0"
+              >
+                ✅ Apply
+              </button>
+              <button class="action-btn finish-btn" @click="finishDrawing">
+                🏁 Done
+              </button>
+            </div>
+          </div>
+
+          <button
+            class="operation-btn"
+            :class="{ active: currentOperation === 'draw-freehand' }"
+            @click="selectOperation('draw-freehand', $event)"
+          >
+            <span class="btn-icon">✏️</span>
+            Freehand Drawing
             <span class="btn-arrow">→</span>
           </button>
           <button
@@ -128,7 +241,7 @@
             @click="selectOperation('add-text', $event)"
           >
             <span class="btn-icon">📝</span>
-            Add Text
+            Custom Text
             <span class="btn-arrow">→</span>
           </button>
         </div>
@@ -570,6 +683,68 @@ export default {
     const batchModalActive = ref(false);
     const pdfModalActive = ref(false);
 
+    const availableTools = ref([
+      { type: "rectangle", name: "Rectangle", icon: "▭" },
+      { type: "circle", name: "Circle", icon: "●" },
+      { type: "line", name: "Line", icon: "─" },
+      { type: "arrow", name: "Arrow", icon: "→" },
+      { type: "polygon", name: "Polygon", icon: "⬟" },
+    ]);
+
+    // New drawing-related data
+    const drawingMode = ref(null);
+    const currentShapes = ref([]);
+    const freehandPoints = ref([]);
+    const textElements = ref([]);
+    const isDrawing = ref(false);
+    const currentDrawingTool = ref("rectangle");
+    const drawingColor = ref([255, 0, 0]); // Default red
+    const drawingThickness = ref(2);
+    const drawingFilled = ref(false);
+
+    // Drawing state for shapes
+    const drawingState = reactive({
+      startX: 0,
+      startY: 0,
+      currentX: 0,
+      currentY: 0,
+      isDrawing: false,
+      previewShape: null,
+    });
+
+    // Example usage in frontend
+    const polygonShape = {
+      type: "polygon",
+      polygon_type: "pentagon", // or 'triangle', 'hexagon', 'star', etc.
+      center_x: 200,
+      center_y: 150,
+      size: 80,
+      color: [255, 0, 0],
+      thickness: 3,
+      filled: false,
+    };
+
+    const selectDrawingTool = (toolType) => {
+      currentDrawingTool.value = toolType;
+      statusText.value = `Selected ${toolType} tool - Click on image to draw`;
+    };
+
+    const rgbToHex = (rgb) => {
+      return (
+        "#" +
+        ((1 << 24) + (rgb[0] << 16) + (rgb[1] << 8) + rgb[2])
+          .toString(16)
+          .slice(1)
+      );
+    };
+
+    const updateColor = (hexColor) => {
+      const r = parseInt(hexColor.slice(1, 3), 16);
+      const g = parseInt(hexColor.slice(3, 5), 16);
+      const b = parseInt(hexColor.slice(5, 7), 16);
+      drawingColor.value = [r, g, b];
+    };
+
     const originalInfo = reactive({
       status: "No image loaded",
     });
@@ -634,17 +809,7 @@ export default {
       img.src = URL.createObjectURL(file);
     };
 
-    const selectOperation = async (operation, event) => {
-      if (!currentImage.value) {
-        showMessage("Please load an image first!", "error");
-        return;
-      }
-
-      currentOperation.value = operation;
-      showControls.value = true;
-
-      await processImage(operation);
-    };
+    // (Removed duplicate selectOperation to fix redeclaration error)
 
     const processImage = async (operation) => {
       if (!currentImage.value) return;
@@ -669,13 +834,32 @@ export default {
           result.green_channel &&
           result.blue_channel
         ) {
-          // Handle RGB channel extraction - could create a composite view
-          processedImage.value = `data:image/png;base64,${result.red_channel}`;
+          // Handle RGB channel extraction with user selection
+          const channelType = params.channel_type || "red"; // default to red
+
+          switch (channelType) {
+            case "red":
+              processedImage.value = `data:image/png;base64,${result.red_channel}`;
+              processedInfo.operation = "Red Channel Extraction";
+              break;
+            case "green":
+              processedImage.value = `data:image/png;base64,${result.green_channel}`;
+              processedInfo.operation = "Green Channel Extraction";
+              break;
+            case "blue":
+              processedImage.value = `data:image/png;base64,${result.blue_channel}`;
+              processedInfo.operation = "Blue Channel Extraction";
+              break;
+            case "combined":
+              // Show a composite view or just default to red
+              processedImage.value = `data:image/png;base64,${result.red_channel}`;
+              processedInfo.operation = "RGB Channels (Red View)";
+              break;
+          }
         } else if (result.hsv_image) {
           processedImage.value = `data:image/png;base64,${result.hsv_image}`;
         }
 
-        processedInfo.operation = operation.replace(/-/g, " ");
         processedInfo.status = "Complete";
         processedInfo.backend = "FastAPI + OpenCV";
 
@@ -696,14 +880,520 @@ export default {
       }
     };
 
+    // Add RGB channel selection functionality
+    const selectRGBChannel = (channelType) => {
+      if (!currentImage.value) {
+        showMessage("Please load an image first!", "error");
+        return;
+      }
+
+      // Update the operation parameters
+      operationParameters["rgb-channels"] = { channel_type: channelType };
+
+      // Process the image with the selected channel
+      processImage("rgb-channels");
+
+      statusText.value = `Extracting ${channelType} channel...`;
+    };
+
+    // Quick RGB channel buttons
+    const extractRedChannel = () => selectRGBChannel("red");
+    const extractGreenChannel = () => selectRGBChannel("green");
+    const extractBlueChannel = () => selectRGBChannel("blue");
+
     const getOperationParameters = (operation) => {
       return operationParameters[operation] || {};
     };
 
+    // (Removed duplicate updateParameters to fix redeclaration error)
+
+    const selectOperation = async (operation, event) => {
+      if (!currentImage.value) {
+        showMessage("Please load an image first!", "error");
+        return;
+      }
+
+      currentOperation.value = operation;
+      showControls.value = true;
+
+      // Handle drawing operations differently
+      if (operation === "draw-shapes") {
+        initializeDrawingMode("shapes");
+      } else if (operation === "draw-freehand") {
+        initializeDrawingMode("freehand");
+      } else if (operation === "add-text") {
+        initializeDrawingMode("text");
+      } else {
+        await processImage(operation);
+      }
+    };
+
+    const initializeDrawingMode = (mode) => {
+      drawingMode.value = mode;
+      currentShapes.value = [];
+      freehandPoints.value = [];
+      textElements.value = [];
+
+      statusText.value = `${mode} drawing mode active - Click on image to draw`;
+
+      // Setup canvas overlay for drawing
+      nextTick(() => {
+        setupDrawingCanvas();
+      });
+    };
+
+    const setupDrawingCanvas = () => {
+      const imageContainer = document.querySelector(".image-container");
+      if (!imageContainer) return;
+
+      // Remove existing canvas if any
+      const existingCanvas = document.getElementById("drawing-canvas");
+      if (existingCanvas) {
+        existingCanvas.remove();
+      }
+
+      // Create new canvas overlay
+      const canvas = document.createElement("canvas");
+      canvas.id = "drawing-canvas";
+      canvas.style.cssText = `
+        position: absolute;
+        top: 0;
+        left: 0;
+        cursor: crosshair;
+        z-index: 10;
+        pointer-events: auto;
+      `;
+
+      // Set canvas size to match image
+      const img = imageContainer.querySelector("img");
+      if (img) {
+        canvas.width = img.clientWidth;
+        canvas.height = img.clientHeight;
+        canvas.style.width = img.clientWidth + "px";
+        canvas.style.height = img.clientHeight + "px";
+      }
+
+      imageContainer.style.position = "relative";
+      imageContainer.appendChild(canvas);
+
+      // Add drawing event listeners
+      setupDrawingEvents(canvas);
+    };
+
+    const setupDrawingEvents = (canvas) => {
+      const ctx = canvas.getContext("2d");
+
+      canvas.addEventListener("mousedown", handleDrawStart);
+      canvas.addEventListener("mousemove", handleDrawMove);
+      canvas.addEventListener("mouseup", handleDrawEnd);
+      canvas.addEventListener("click", handleCanvasClick);
+
+      // Touch events for mobile
+      canvas.addEventListener("touchstart", handleTouchStart);
+      canvas.addEventListener("touchmove", handleTouchMove);
+      canvas.addEventListener("touchend", handleTouchEnd);
+    };
+
+    const handleDrawStart = (e) => {
+      const rect = e.target.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      if (drawingMode.value === "shapes") {
+        drawingState.isDrawing = true;
+        drawingState.startX = x;
+        drawingState.startY = y;
+        drawingState.currentX = x;
+        drawingState.currentY = y;
+      } else if (drawingMode.value === "freehand") {
+        isDrawing.value = true;
+        freehandPoints.value = [{ x, y }];
+      }
+    };
+
+    const handleDrawMove = (e) => {
+      if (!isDrawing.value && !drawingState.isDrawing) return;
+
+      const rect = e.target.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      if (drawingMode.value === "shapes" && drawingState.isDrawing) {
+        drawingState.currentX = x;
+        drawingState.currentY = y;
+        drawPreviewShape(e.target);
+      } else if (drawingMode.value === "freehand" && isDrawing.value) {
+        freehandPoints.value.push({ x, y });
+        drawFreehandPreview(e.target);
+      }
+    };
+
+    const handleDrawEnd = (e) => {
+      if (drawingMode.value === "shapes" && drawingState.isDrawing) {
+        completeShapeDrawing();
+        drawingState.isDrawing = false;
+      } else if (drawingMode.value === "freehand" && isDrawing.value) {
+        completeFreehandDrawing();
+        isDrawing.value = false;
+      }
+    };
+
+    const handleCanvasClick = (e) => {
+      if (drawingMode.value === "text") {
+        const rect = e.target.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        addTextAtPosition(x, y);
+      }
+    };
+
+    const drawPreviewShape = (canvas) => {
+      const ctx = canvas.getContext("2d");
+
+      // Clear canvas and redraw all shapes
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      redrawAllShapes(ctx);
+
+      // Draw preview shape
+      ctx.strokeStyle = `rgb(${drawingColor.value.join(",")})`;
+      ctx.lineWidth = drawingThickness.value;
+
+      if (drawingFilled.value) {
+        ctx.fillStyle = `rgb(${drawingColor.value.join(",")})`;
+      }
+
+      const startX = drawingState.startX;
+      const startY = drawingState.startY;
+      const currentX = drawingState.currentX;
+      const currentY = drawingState.currentY;
+
+      switch (currentDrawingTool.value) {
+        case "rectangle":
+          const width = currentX - startX;
+          const height = currentY - startY;
+          if (drawingFilled.value) {
+            ctx.fillRect(startX, startY, width, height);
+          } else {
+            ctx.strokeRect(startX, startY, width, height);
+          }
+          break;
+
+        case "circle":
+          const radius = Math.sqrt(
+            Math.pow(currentX - startX, 2) + Math.pow(currentY - startY, 2)
+          );
+          ctx.beginPath();
+          ctx.arc(startX, startY, radius, 0, 2 * Math.PI);
+          if (drawingFilled.value) {
+            ctx.fill();
+          } else {
+            ctx.stroke();
+          }
+          break;
+
+        case "line":
+          ctx.beginPath();
+          ctx.moveTo(startX, startY);
+          ctx.lineTo(currentX, currentY);
+          ctx.stroke();
+          break;
+
+        case "arrow":
+          drawArrowPreview(ctx, startX, startY, currentX, currentY);
+          break;
+      }
+    };
+
+    const drawArrowPreview = (ctx, x1, y1, x2, y2) => {
+      const headlen = 10;
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const angle = Math.atan2(dy, dx);
+
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.lineTo(
+        x2 - headlen * Math.cos(angle - Math.PI / 6),
+        y2 - headlen * Math.sin(angle - Math.PI / 6)
+      );
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(
+        x2 - headlen * Math.cos(angle + Math.PI / 6),
+        y2 - headlen * Math.sin(angle + Math.PI / 6)
+      );
+      ctx.stroke();
+    };
+
+    const completeShapeDrawing = () => {
+      const shape = {
+        type: currentDrawingTool.value,
+        color: [...drawingColor.value],
+        thickness: drawingThickness.value,
+        filled: drawingFilled.value,
+      };
+
+      const startX = drawingState.startX;
+      const startY = drawingState.startY;
+      const currentX = drawingState.currentX;
+      const currentY = drawingState.currentY;
+
+      switch (currentDrawingTool.value) {
+        case "rectangle":
+          shape.x1 = startX;
+          shape.y1 = startY;
+          shape.x2 = currentX;
+          shape.y2 = currentY;
+          break;
+
+        case "circle":
+          shape.center_x = startX;
+          shape.center_y = startY;
+          shape.radius = Math.sqrt(
+            Math.pow(currentX - startX, 2) + Math.pow(currentY - startY, 2)
+          );
+          break;
+
+        case "line":
+        case "arrow":
+          shape.x1 = startX;
+          shape.y1 = startY;
+          shape.x2 = currentX;
+          shape.y2 = currentY;
+          if (currentDrawingTool.value === "arrow") {
+            shape.tip_length = 0.1;
+          }
+          break;
+      }
+
+      currentShapes.value.push(shape);
+      processDrawnShapes();
+    };
+
+    const drawFreehandPreview = (canvas) => {
+      const ctx = canvas.getContext("2d");
+
+      if (freehandPoints.value.length < 2) return;
+
+      ctx.strokeStyle = `rgb(${drawingColor.value.join(",")})`;
+      ctx.lineWidth = drawingThickness.value;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      ctx.beginPath();
+      ctx.moveTo(freehandPoints.value[0].x, freehandPoints.value[0].y);
+
+      for (let i = 1; i < freehandPoints.value.length; i++) {
+        ctx.lineTo(freehandPoints.value[i].x, freehandPoints.value[i].y);
+      }
+
+      ctx.stroke();
+    };
+
+    const completeFreehandDrawing = () => {
+      if (freehandPoints.value.length < 2) return;
+
+      processFreehandDrawing();
+    };
+
+    const addTextAtPosition = (x, y) => {
+      const text = prompt("Enter text to add:");
+      if (!text) return;
+
+      const fontSize = prompt("Enter font size (default: 1.0):", "1.0");
+      const fontScale = parseFloat(fontSize) || 1.0;
+
+      const textElement = {
+        text,
+        x: Math.round(x),
+        y: Math.round(y),
+        font_scale: fontScale,
+        color: [...drawingColor.value],
+        thickness: drawingThickness.value,
+        font: "HERSHEY_SIMPLEX",
+      };
+
+      textElements.value.push(textElement);
+      processTextElements();
+    };
+
+    const processDrawnShapes = async () => {
+      if (!currentImage.value || currentShapes.value.length === 0) return;
+
+      try {
+        statusText.value = "Processing drawn shapes...";
+        progress.value = 50;
+
+        const base64Data = currentImage.value.split(",")[1];
+
+        const result = await imageProcessingService.processImage(
+          "draw-shapes",
+          base64Data,
+          { shapes: JSON.stringify(currentShapes.value) }
+        );
+
+        if (result.processed_image) {
+          processedImage.value = `data:image/png;base64,${result.processed_image}`;
+          processedInfo.operation = `Drawn ${
+            result.shapes_drawn?.length || 0
+          } shapes`;
+          processedInfo.status = "Complete";
+
+          statusText.value = `Drawn ${result.total_shapes || 0} shapes`;
+          showMessage(
+            `Successfully drew ${result.total_shapes || 0} shapes`,
+            "success"
+          );
+        }
+
+        progress.value = 100;
+        setTimeout(() => {
+          progress.value = 0;
+          statusText.value = "Ready for more drawing";
+        }, 1000);
+      } catch (error) {
+        console.error("Error processing shapes:", error);
+        showMessage(`Error processing shapes: ${error.message}`, "error");
+        statusText.value = "Drawing error";
+        progress.value = 0;
+      }
+    };
+
+    const processFreehandDrawing = async () => {
+      if (!currentImage.value || freehandPoints.value.length === 0) return;
+
+      try {
+        statusText.value = "Processing freehand drawing...";
+        progress.value = 50;
+
+        const base64Data = currentImage.value.split(",")[1];
+
+        const result = await imageProcessingService.processImage(
+          "draw-freehand",
+          base64Data,
+          {
+            points: JSON.stringify(freehandPoints.value),
+            color: JSON.stringify(drawingColor.value),
+            thickness: drawingThickness.value,
+            closed: false,
+          }
+        );
+
+        if (result.processed_image) {
+          processedImage.value = `data:image/png;base64,${result.processed_image}`;
+          processedInfo.operation = `Freehand drawing (${result.points_count} points)`;
+          processedInfo.status = "Complete";
+
+          statusText.value = `Freehand drawing with ${result.points_count} points`;
+          showMessage("Freehand drawing completed", "success");
+        }
+
+        // Reset freehand points for next drawing
+        freehandPoints.value = [];
+
+        progress.value = 100;
+        setTimeout(() => {
+          progress.value = 0;
+          statusText.value = "Ready for more drawing";
+        }, 1000);
+      } catch (error) {
+        console.error("Error processing freehand:", error);
+        showMessage(`Error processing freehand: ${error.message}`, "error");
+        statusText.value = "Drawing error";
+        progress.value = 0;
+      }
+    };
+
+    const processTextElements = async () => {
+      if (!currentImage.value || textElements.value.length === 0) return;
+
+      try {
+        statusText.value = "Processing text elements...";
+        progress.value = 50;
+
+        const base64Data = currentImage.value.split(",")[1];
+
+        const result = await imageProcessingService.processImage(
+          "draw-text-custom",
+          base64Data,
+          { text_elements: JSON.stringify(textElements.value) }
+        );
+
+        if (result.processed_image) {
+          processedImage.value = `data:image/png;base64,${result.processed_image}`;
+          processedInfo.operation = `Added ${
+            result.texts_drawn?.length || 0
+          } text elements`;
+          processedInfo.status = "Complete";
+
+          statusText.value = `Added ${result.total_texts || 0} text elements`;
+          showMessage(
+            `Successfully added ${result.total_texts || 0} text elements`,
+            "success"
+          );
+        }
+
+        progress.value = 100;
+        setTimeout(() => {
+          progress.value = 0;
+          statusText.value = "Ready for more text";
+        }, 1000);
+      } catch (error) {
+        console.error("Error processing text:", error);
+        showMessage(`Error processing text: ${error.message}`, "error");
+        statusText.value = "Text processing error";
+        progress.value = 0;
+      }
+    };
+
+    const redrawAllShapes = (ctx) => {
+      // This would redraw all existing shapes on the canvas
+      // Implementation depends on how you want to handle multiple shapes
+    };
+
+    const clearDrawing = () => {
+      const canvas = document.getElementById("drawing-canvas");
+      if (canvas) {
+        const ctx = canvas.getContext("2d");
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+
+      currentShapes.value = [];
+      freehandPoints.value = [];
+      textElements.value = [];
+      statusText.value = "Drawing cleared";
+    };
+
+    const finishDrawing = () => {
+      drawingMode.value = null;
+      const canvas = document.getElementById("drawing-canvas");
+      if (canvas) {
+        canvas.remove();
+      }
+
+      statusText.value = "Drawing completed";
+      showMessage("Drawing session finished", "success");
+    };
+
+    // Update parameters method to handle drawing tools
     const updateParameters = (operation, params) => {
-      operationParameters[operation] = params;
-      if (currentOperation.value === operation) {
-        processImage(operation);
+      if (operation === "draw-shapes") {
+        if (params.tool) currentDrawingTool.value = params.tool;
+        if (params.color) drawingColor.value = params.color;
+        if (params.thickness) drawingThickness.value = params.thickness;
+        if (params.filled !== undefined) drawingFilled.value = params.filled;
+      } else if (operation === "draw-freehand") {
+        if (params.color) drawingColor.value = params.color;
+        if (params.thickness) drawingThickness.value = params.thickness;
+      } else if (operation === "add-text") {
+        if (params.color) drawingColor.value = params.color;
+        if (params.thickness) drawingThickness.value = params.thickness;
+      } else {
+        operationParameters[operation] = params;
+        if (currentOperation.value === operation) {
+          processImage(operation);
+        }
       }
     };
 
@@ -1232,6 +1922,23 @@ export default {
       showStatusModal,
       toggleStatusModal,
       closeStatusModal,
+      drawingMode,
+      currentShapes,
+      freehandPoints,
+      textElements,
+      isDrawing,
+      currentDrawingTool,
+      drawingColor,
+      drawingThickness,
+      drawingFilled,
+      availableTools,
+      selectDrawingTool,
+      rgbToHex,
+      updateColor,
+      selectRGBChannel,
+      extractRedChannel,
+      extractGreenChannel,
+      extractBlueChannel,
 
       // Methods
       handleImageLoad,
@@ -1249,6 +1956,9 @@ export default {
       startBatchProcessing,
       closePDFModal,
       generatePDFReport,
+      initializeDrawingMode,
+      clearDrawing,
+      finishDrawing,
     };
   },
 };
