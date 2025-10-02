@@ -132,8 +132,11 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000  # Alternative start method
 ```
 opencv-image-processing-studio/
 ├── backend/
-│   ├── main.py
+│   ├── main.py        # Electron main process
 │   ├── requirements.txt
+├── electron/
+│   ├── main.js
+│   ├── preload.js
 ├── src/
 │   ├── components/           # Vue.js components
 │   │   ├── ImagePanel.vue
@@ -143,11 +146,9 @@ opencv-image-processing-studio/
 │   ├── services/            # API services
 │   │   └── imageProcessingService.js
 │   ├── App.vue              # Main Vue component
-│   ├── main.js               # Vue.js entry point
-│   ├── preload.js
 │   ├── renderer.js          
 │   └── style.css            # Global styles
-├── main.js                  # Electron main process
+├── main.js                  # VUE entry point         
 ├── main.py                  # FastAPI backend server
 ├── package.json             # Node.js dependencies
 ├── vite.config.js          # Vite configuration
